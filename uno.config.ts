@@ -239,6 +239,7 @@ export default defineConfig({
     }),
     presetIcons({
       warn: true,
+      autoInstall: true,
       collections: {
         ...customIconCollection,
       },
