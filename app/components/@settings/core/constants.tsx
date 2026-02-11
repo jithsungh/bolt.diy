@@ -1,5 +1,5 @@
 import type { TabType } from './types';
-import { User, Settings, Bell, Star, Database, Cloud, Laptop, Github, Wrench, List } from 'lucide-react';
+import { User, Settings, Bell, Star, Database, Cloud, Laptop, Github, Wrench, List, Brain } from 'lucide-react';
 
 // GitLab icon component
 const GitLabIcon = () => (
@@ -53,6 +53,7 @@ export const TAB_ICONS: Record<TabType, React.ComponentType<{ className?: string
   supabase: () => <SupabaseIcon />,
   'event-logs': List,
   mcp: Wrench,
+  agents: Brain, // ✅ Added agents icon
 };
 
 export const TAB_LABELS: Record<TabType, string> = {
@@ -70,6 +71,7 @@ export const TAB_LABELS: Record<TabType, string> = {
   supabase: 'Supabase',
   'event-logs': 'Event Logs',
   mcp: 'MCP Servers',
+  agents: 'Agent System', // ✅ Added agents label
 };
 
 export const TAB_DESCRIPTIONS: Record<TabType, string> = {
@@ -87,17 +89,19 @@ export const TAB_DESCRIPTIONS: Record<TabType, string> = {
   supabase: 'Setup Supabase database connection',
   'event-logs': 'View system events and logs',
   mcp: 'Configure MCP (Model Context Protocol) servers',
+  agents: 'Configure autonomous agent system and memory', // ✅ Added agents description
 };
 
 export const DEFAULT_TAB_CONFIG = [
   // User Window Tabs (Always visible by default)
   { id: 'features', visible: true, window: 'user' as const, order: 0 },
   { id: 'data', visible: true, window: 'user' as const, order: 1 },
-  { id: 'cloud-providers', visible: true, window: 'user' as const, order: 2 },
-  { id: 'local-providers', visible: true, window: 'user' as const, order: 3 },
-  { id: 'github', visible: true, window: 'user' as const, order: 4 },
-  { id: 'gitlab', visible: true, window: 'user' as const, order: 5 },
-  { id: 'netlify', visible: true, window: 'user' as const, order: 6 },
+  { id: 'agents', visible: true, window: 'user' as const, order: 2 }, // ✅ Added agents tab
+  { id: 'cloud-providers', visible: true, window: 'user' as const, order: 3 },
+  { id: 'local-providers', visible: true, window: 'user' as const, order: 4 },
+  { id: 'github', visible: true, window: 'user' as const, order: 5 },
+  { id: 'gitlab', visible: true, window: 'user' as const, order: 6 },
+  { id: 'netlify', visible: true, window: 'user' as const, order: 7 },
   { id: 'vercel', visible: true, window: 'user' as const, order: 7 },
   { id: 'supabase', visible: true, window: 'user' as const, order: 8 },
   { id: 'notifications', visible: true, window: 'user' as const, order: 9 },

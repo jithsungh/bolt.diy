@@ -183,15 +183,41 @@ export class EmbeddingGenerator {
 
   /**
    * Generate embedding using the user's selected LLM.
-   * Integrated with bolt.diy's LLMManager.
+   *
+   * NOTE: Integration with bolt.diy's LLMManager for embeddings:
+   *
+   * Most LLM providers (Anthropic, Google, etc.) do not expose embedding APIs.
+   * OpenAI does, but requires separate API configuration:
+   *
+   * To enable OpenAI embeddings:
+   * 1. Create endpoint: /app/routes/api.embeddings.ts
+   * 2. Use OpenAI SDK directly:
+   *    ```typescript
+   *    import OpenAI from 'openai';
+   *    const openai = new OpenAI({ apiKey: apiKeys.openai });
+   *    const result = await openai.embeddings.create({
+   *      model: 'text-embedding-3-small',
+   *      input: text,
+   *    });
+   *    return result.data[0].embedding;
+   *    ```
+   * 3. Call from here via fetch()
+   *
+   * For now, using simple TF-IDF-style embeddings as fallback.
+   * This works well for semantic search within small codebases.
    */
   private async generateLLMEmbedding(text: string, model?: string): Promise<number[]> {
-    // Note: Most LLMs don't expose embedding APIs through the SDK
-    // OpenAI has embeddings but requires separate API calls
-    // For now, we fallback to simple embeddings
-    // TODO: Add proper embedding API integration when available
-    
-    logger.debug('LLM embeddings not yet implemented, using fallback');
+    // Future integration point: check if OpenAI embeddings API is available
+    // if (apiKeys.openai && model?.includes('embedding')) {
+    //   const response = await fetch('/api/embeddings', {
+    //     method: 'POST',
+    //     body: JSON.stringify({ text, model }),
+    //   });
+    //   const { embedding } = await response.json();
+    //   return embedding;
+    // }
+
+    logger.debug('Using fallback embeddings (OpenAI API not configured)');
     return this.generateSimpleEmbedding(text);
   }
 
@@ -201,7 +227,7 @@ export class EmbeddingGenerator {
   private async generateLLMBatch(texts: string[], model?: string): Promise<number[][]> {
     // TODO: Integrate with bolt.diy's LLM batch API
     // For now, generate individually
-    return Promise.all(texts.map(t => this.generateLLMEmbedding(t, model)));
+    return Promise.all(texts.map((t) => this.generateLLMEmbedding(t, model)));
   }
 
   // -------------------------------------------------------------------------

@@ -13,6 +13,9 @@
 
 import { createScopedLogger } from '~/utils/logger';
 import type { Task, TaskResult } from '../agents/types';
+import { streamText } from '~/lib/.server/llm/stream-text';
+import type { Message as AIMessage } from 'ai';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '~/utils/constants';
 
 const logger = createScopedLogger('ShortTermMemory');
 
@@ -209,16 +212,59 @@ export class ShortTermMemory {
 
   /**
    * Generate summary of messages using LLM.
+   * Integrated with bolt.diy's streamText API.
    */
   private async generateSummary(messages: Message[]): Promise<string> {
-    // TODO: Integrate with bolt.diy's LLM API
-    // For now, create a simple summary
+    try {
+      // Convert messages to AI format
+      const conversationText = messages.map((m) => `${m.role}: ${m.content}`).join('\n\n');
 
-    const userMessages = messages.filter(m => m.role === 'user');
-    const assistantMessages = messages.filter(m => m.role === 'assistant');
+      const summaryPrompt: AIMessage[] = [
+        {
+          role: 'system',
+          content: 'You are a concise summarizer. Create a brief 2-3 sentence summary of the conversation.',
+        },
+        {
+          role: 'user',
+          content: `Summarize this conversation:\n\n${conversationText}`,
+        },
+      ];
 
-    return `Conversation summary: ${userMessages.length} user messages, ${assistantMessages.length} assistant responses. ` +
-           `Topics discussed: ${this.extractTopics(messages).join(', ')}.`;
+      // Use bolt.diy's streamText API
+      const result = await streamText({
+        messages: summaryPrompt,
+      });
+
+      // Collect streamed response
+      let summary = '';
+      const reader = result.toDataStreamResponse().body?.getReader();
+      if (reader) {
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          summary += decoder.decode(value, { stream: true });
+        }
+      }
+
+      return summary || this.generateFallbackSummary(messages);
+    } catch (error) {
+      logger.warn('LLM summary generation failed, using fallback:', error);
+      return this.generateFallbackSummary(messages);
+    }
+  }
+
+  /**
+   * Fallback summary when LLM is unavailable.
+   */
+  private generateFallbackSummary(messages: Message[]): string {
+    const userMessages = messages.filter((m) => m.role === 'user');
+    const assistantMessages = messages.filter((m) => m.role === 'assistant');
+
+    return (
+      `Conversation summary: ${userMessages.length} user messages, ${assistantMessages.length} assistant responses. ` +
+      `Topics discussed: ${this.extractTopics(messages).join(', ')}.`
+    );
   }
 
   /**
@@ -228,7 +274,7 @@ export class ShortTermMemory {
     const points: string[] = [];
 
     // Extract important user requests
-    const userMessages = messages.filter(m => m.role === 'user');
+    const userMessages = messages.filter((m) => m.role === 'user');
     for (const msg of userMessages.slice(0, 5)) {
       points.push(msg.content.slice(0, 100));
     }

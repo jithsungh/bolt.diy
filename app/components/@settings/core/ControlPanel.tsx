@@ -29,6 +29,7 @@ import NetlifyTab from '~/components/@settings/tabs/netlify/NetlifyTab';
 import CloudProvidersTab from '~/components/@settings/tabs/providers/cloud/CloudProvidersTab';
 import LocalProvidersTab from '~/components/@settings/tabs/providers/local/LocalProvidersTab';
 import McpTab from '~/components/@settings/tabs/mcp/McpTab';
+import AgentSystemTab from '~/components/@settings/tabs/agents/AgentSystemTab'; // ✅ Added agents tab
 
 interface ControlPanelProps {
   open: boolean;
@@ -147,6 +148,8 @@ export const ControlPanel = ({ open, onClose }: ControlPanelProps) => {
         return <VercelTab />;
       case 'netlify':
         return <NetlifyTab />;
+      case 'agents': // ✅ Added agents tab
+        return <AgentSystemTab />;
       case 'event-logs':
         return <EventLogsTab />;
       case 'mcp':

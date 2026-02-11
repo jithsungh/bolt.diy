@@ -17,7 +17,8 @@ export type TabType =
   | 'vercel'
   | 'supabase'
   | 'event-logs'
-  | 'mcp';
+  | 'mcp'
+  | 'agents'; // ✅ Added agents tab
 
 export type WindowType = 'user' | 'developer';
 

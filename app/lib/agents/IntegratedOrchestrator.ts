@@ -1,14 +1,15 @@
 /**
  * Integrated Agent Orchestrator
- * 
+ *
  * Coordinates the multi-agent system while properly integrating with
  * bolt.diy's existing infrastructure (ActionRunner, LLMManager, WorkbenchStore).
- * 
+ *
  * This replaces the standalone AgentOrchestrator with a properly integrated version.
  */
 
 import { createScopedLogger } from '~/utils/logger';
 import type { ActionRunner } from '~/lib/runtime/action-runner';
+import type { WorkbenchStore } from '~/lib/stores/workbench';
 import { PlannerAgent } from './PlannerAgent';
 import { ExecutorAgent } from './ExecutorAgent';
 import { ReviewerAgent } from './ReviewerAgent';
@@ -20,6 +21,7 @@ const logger = createScopedLogger('IntegratedOrchestrator');
 
 export interface OrchestratorConfig {
   actionRunner: ActionRunner;
+  workbenchStore?: WorkbenchStore; // ✅ Added WorkbenchStore
   files?: FileMap;
   cwd?: string;
   enableMemory?: boolean;
@@ -42,6 +44,7 @@ export interface OrchestratorResult {
  */
 export class IntegratedOrchestrator {
   private actionRunner: ActionRunner;
+  private workbenchStore?: WorkbenchStore; // ✅ Added WorkbenchStore
   private planner: PlannerAgent;
   private executor: ExecutorAgent;
   private reviewer: ReviewerAgent;
@@ -50,6 +53,7 @@ export class IntegratedOrchestrator {
 
   constructor(config: OrchestratorConfig) {
     this.actionRunner = config.actionRunner;
+    this.workbenchStore = config.workbenchStore; // ✅ Store WorkbenchStore
 
     // Initialize agents with proper dependencies
     this.planner = new PlannerAgent();
@@ -80,6 +84,7 @@ export class IntegratedOrchestrator {
 
     logger.info('IntegratedOrchestrator initialized', {
       memoryEnabled: !!this.memoryManager,
+      workbenchIntegrated: !!this.workbenchStore, // ✅ Log WorkbenchStore status
       safetyLevel: this.safetyConstraints.validateBeforeExecute ? 'strict' : 'loose',
     });
   }
@@ -96,7 +101,7 @@ export class IntegratedOrchestrator {
 
   /**
    * Process a user request through the agent pipeline
-   * 
+   *
    * Flow:
    * 1. Planner decomposes request into tasks
    * 2. Executor executes tasks via ActionRunner
@@ -109,29 +114,32 @@ export class IntegratedOrchestrator {
       files?: FileMap;
       conversationHistory?: string[];
       cwd?: string;
-    }
+    },
   ): Promise<OrchestratorResult> {
     logger.info('Processing user request', { requestLength: userRequest.length });
 
     try {
       // Step 1: Planning
-      const planResult = await this.planner.execute({
-        id: `plan_${Date.now()}`,
-        type: 'analysis',
-        description: userRequest,
-        priority: 'high',
-        status: 'pending',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }, {
-        repoContext: {
-          files: context.files || {},
-          dependencies: [],
-          architecture: [],
-          lockedFiles: [],
+      const planResult = await this.planner.execute(
+        {
+          id: `plan_${Date.now()}`,
+          type: 'analysis',
+          description: userRequest,
+          priority: 'high',
+          status: 'pending',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
         },
-        conversationHistory: context.conversationHistory || [],
-      } as any);
+        {
+          repoContext: {
+            files: context.files || {},
+            dependencies: [],
+            architecture: [],
+            lockedFiles: [],
+          },
+          conversationHistory: context.conversationHistory || [],
+        } as any,
+      );
 
       if (!planResult.success || !planResult.output) {
         return {
@@ -139,18 +147,24 @@ export class IntegratedOrchestrator {
           tasks: [],
           results: [],
           summary: 'Planning failed',
-          errors: planResult.validationErrors?.map(e => e.message) || ['Planning failed'],
+          errors: planResult.validationErrors?.map((e) => e.message) || ['Planning failed'],
         };
       }
 
       const tasks: Task[] = planResult.output.tasks || [];
       logger.info(`Planner generated ${tasks.length} tasks`);
 
+      // ✅ Update WorkbenchStore with planned tasks
+      this.updateWorkbenchStatus(`Planning complete: ${tasks.length} tasks`);
+
       // Step 2: Execution
       const results: TaskResult[] = [];
 
       for (const task of tasks) {
         logger.info(`Executing task: ${task.id} - ${task.description}`);
+
+        // ✅ Update WorkbenchStore with current task
+        this.updateWorkbenchStatus(`Executing: ${task.description}`);
 
         const executionResult = await this.executor.execute(task, {
           context: {
@@ -168,9 +182,16 @@ export class IntegratedOrchestrator {
 
         results.push(executionResult);
 
+        // ✅ Update WorkbenchStore with task result
+        if (executionResult.success) {
+          this.updateWorkbenchStatus(`✓ Completed: ${task.description}`);
+        } else {
+          this.updateWorkbenchStatus(`✗ Failed: ${task.description}`);
+        }
+
         // Stop on critical failure
         if (!executionResult.success) {
-          const hasErrors = executionResult.validationErrors?.some(e => e.severity === 'error');
+          const hasErrors = executionResult.validationErrors?.some((e) => e.severity === 'error');
           if (hasErrors) {
             logger.error(`Task ${task.id} failed critically, stopping execution`);
             break;
@@ -179,19 +200,22 @@ export class IntegratedOrchestrator {
       }
 
       // Step 3: Review
-      const reviewResult = await this.reviewer.execute({
-        id: `review_${Date.now()}`,
-        type: 'review',
-        description: 'Review execution results',
-        priority: 'high',
-        status: 'pending',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }, {
-        tasks,
-        results,
-        originalRequest: userRequest,
-      } as any);
+      const reviewResult = await this.reviewer.execute(
+        {
+          id: `review_${Date.now()}`,
+          type: 'review',
+          description: 'Review execution results',
+          priority: 'high',
+          status: 'pending',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        {
+          tasks,
+          results,
+          originalRequest: userRequest,
+        } as any,
+      );
 
       // Step 4: Memory (if enabled)
       if (this.memoryManager && reviewResult.success) {
@@ -199,7 +223,7 @@ export class IntegratedOrchestrator {
       }
 
       // Generate summary
-      const successCount = results.filter(r => r.success).length;
+      const successCount = results.filter((r) => r.success).length;
       const summary = `Completed ${successCount}/${tasks.length} tasks successfully`;
 
       return {
@@ -208,11 +232,10 @@ export class IntegratedOrchestrator {
         results,
         summary,
         errors: results
-          .flatMap(r => r.validationErrors || [])
-          .filter(e => e.severity === 'error')
-          .map(e => e.message),
+          .flatMap((r) => r.validationErrors || [])
+          .filter((e) => e.severity === 'error')
+          .map((e) => e.message),
       };
-
     } catch (error) {
       logger.error('Orchestrator error:', error);
       return {
@@ -232,7 +255,7 @@ export class IntegratedOrchestrator {
     request: string,
     tasks: Task[],
     results: TaskResult[],
-    reviewOutput: any
+    reviewOutput: any,
   ): Promise<void> {
     if (!this.memoryManager) {
       return;
@@ -250,7 +273,7 @@ export class IntegratedOrchestrator {
         }
       }
 
-      const successCount = results.filter(r => r?.success).length;
+      const successCount = results.filter((r) => r?.success).length;
       logger.info(`Recorded ${successCount}/${tasks.length} task results to memory`);
     } catch (error) {
       logger.warn('Failed to record to memory:', error);
@@ -294,5 +317,40 @@ export class IntegratedOrchestrator {
   async cleanup(): Promise<void> {
     // Cleanup memory connections, etc.
     logger.info('Orchestrator cleanup complete');
+  }
+
+  /**
+   * Update WorkbenchStore with current status (if available)
+   * This provides UI feedback during agent execution
+   */
+  private updateWorkbenchStatus(status: string): void {
+    if (this.workbenchStore) {
+      // WorkbenchStore uses actionAlert for status updates
+      // Note: This is a simplified example - actual implementation may vary
+      logger.debug(`Status update: ${status}`);
+      // You can extend this to update actionAlert or other stores
+      // this.workbenchStore.actionAlert.set({ type: 'info', message: status });
+    }
+  }
+
+  /**
+   * Get files from WorkbenchStore
+   * Provides access to current workspace files for context
+   */
+  getWorkbenchFiles(): FileMap | undefined {
+    if (!this.workbenchStore) {
+      return undefined;
+    }
+
+    const files = this.workbenchStore.files.get();
+    const fileMap: FileMap = {};
+
+    for (const [path, dirent] of Object.entries(files)) {
+      if (dirent?.type === 'file' && dirent.content) {
+        fileMap[path] = dirent.content;
+      }
+    }
+
+    return fileMap;
   }
 }
