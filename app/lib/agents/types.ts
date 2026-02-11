@@ -50,6 +50,7 @@ export interface FileChange {
   diff?: string;
   validated: boolean;
   safetyScore?: number;
+  validationError?: string; // Error message if validation/execution failed
 }
 
 export interface ValidationError {

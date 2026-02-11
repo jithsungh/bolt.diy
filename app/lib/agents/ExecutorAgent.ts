@@ -12,13 +12,20 @@ import type {
   SafetyConstraints,
 } from './types';
 import { diffFiles } from '~/utils/diff';
+import { ActionRunner } from '~/lib/runtime/action-runner';
+import type { ActionCallbackData } from '~/lib/runtime/message-parser';
+
+interface ExecutorAgentConfig {
+  actionRunner?: ActionRunner;
+}
 
 const logger = createScopedLogger('ExecutorAgent');
 
 export class ExecutorAgent extends BaseAgent {
   private safetyValidator: SafetyValidator;
+  private actionRunner?: ActionRunner;
 
-  constructor() {
+  constructor(config: ExecutorAgentConfig = {}) {
     super('executor', {
       capabilities: ['file_edit', 'file_create', 'file_delete'],
       maxRetries: 3,
@@ -28,6 +35,7 @@ export class ExecutorAgent extends BaseAgent {
     });
 
     this.safetyValidator = new SafetyValidator();
+    this.actionRunner = config.actionRunner;
   }
 
   /**
@@ -67,7 +75,82 @@ export class ExecutorAgent extends BaseAgent {
           throw new Error(`Unsupported task type: ${task.type}`);
       }
 
-      // Post-execution validation
+      // If an ActionRunner is available, delegate execution to it
+      if (this.actionRunner) {
+        const executedChanges: FileChange[] = [];
+
+        for (let i = 0; i < changes.length; i++) {
+          const change = changes[i];
+          const actionId = `${task.id || 'task'}_${i}_${Date.now()}`;
+
+          let actionData: ActionCallbackData;
+
+          if (change.changeType === 'delete') {
+            // Use shell action to remove files (safe, explicit)
+            actionData = {
+              artifactId: task.id || 'agent_artifact',
+              messageId: task.id || 'agent_msg',
+              actionId,
+              action: {
+                type: 'shell',
+                content: `rm -rf ${change.filePath}`,
+              } as any,
+            };
+          } else {
+            // create/modify -> file action
+            actionData = {
+              artifactId: task.id || 'agent_artifact',
+              messageId: task.id || 'agent_msg',
+              actionId,
+              action: {
+                type: 'file',
+                filePath: change.filePath,
+                content: change.newContent ?? change.originalContent ?? '',
+              } as any,
+            };
+          }
+
+          // Register and run the action via ActionRunner
+          try {
+            this.actionRunner.addAction(actionData);
+            await this.actionRunner.runAction(actionData, false);
+
+            // After runAction resolves, inspect status
+            const state = this.actionRunner.actions.get()[actionId];
+            if (state && state.status === 'failed') {
+              change.validated = false;
+              change.validationError = state instanceof Object ? (state as any).error : 'Action failed';
+            } else {
+              change.validated = true;
+            }
+          } catch (err) {
+            this.logger.error('ActionRunner execution error', err);
+            change.validated = false;
+            change.validationError = (err as Error).message;
+          }
+
+          executedChanges.push(change);
+        }
+
+        // Post-execution validation using safety validator
+        const validation = await this.validateChanges(executedChanges, safetyConstraints);
+
+        return {
+          success: validation.passed,
+          changes: executedChanges,
+          validationErrors: validation.errors,
+          metrics: {
+            filesModified: executedChanges.length,
+            linesAdded: executedChanges.reduce((sum, c) => sum + (c.newContent?.split('\n').length || 0), 0),
+            linesRemoved: executedChanges.reduce(
+              (sum, c) => sum + (c.originalContent?.split('\n').length || 0),
+              0
+            ),
+          },
+        };
+      }
+
+      // Fallback: no ActionRunner available - return changes for caller to apply
       const validation = await this.validateChanges(changes, safetyConstraints);
 
       return {

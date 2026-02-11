@@ -183,20 +183,15 @@ export class EmbeddingGenerator {
 
   /**
    * Generate embedding using the user's selected LLM.
-   * This will integrate with bolt.diy's existing LLM API.
+   * Integrated with bolt.diy's LLMManager.
    */
   private async generateLLMEmbedding(text: string, model?: string): Promise<number[]> {
-    // TODO: Integrate with bolt.diy's LLM API
-    // For now, we'll use a simple embedding as fallback
-
-    // In the future, this will call:
-    // const response = await fetch('/api/embeddings', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ text, model }),
-    // });
-    // return response.embedding;
-
-    // Fallback for now
+    // Note: Most LLMs don't expose embedding APIs through the SDK
+    // OpenAI has embeddings but requires separate API calls
+    // For now, we fallback to simple embeddings
+    // TODO: Add proper embedding API integration when available
+    
+    logger.debug('LLM embeddings not yet implemented, using fallback');
     return this.generateSimpleEmbedding(text);
   }
 

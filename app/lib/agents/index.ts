@@ -6,6 +6,15 @@ export { BaseAgent } from './BaseAgent';
 export { PlannerAgent } from './PlannerAgent';
 export { ExecutorAgent } from './ExecutorAgent';
 export { ReviewerAgent } from './ReviewerAgent';
+
+// Integrated Orchestrator (uses bolt.diy infrastructure)
+export {
+  IntegratedOrchestrator,
+  type OrchestratorConfig as IntegratedOrchestratorConfig,
+  type OrchestratorResult,
+} from './IntegratedOrchestrator';
+
+// Legacy standalone orchestrator (for reference)
 export {
   AgentOrchestrator,
   type OrchestratorConfig,
