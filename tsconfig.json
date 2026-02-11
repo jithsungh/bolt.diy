@@ -1,20 +1,25 @@
 {
   "compilerOptions": {
-    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "types": [
+      "node",
       "@remix-run/cloudflare",
       "vite/client",
       "@cloudflare/workers-types/2023-07-01",
       "@types/dom-speech-recognition",
       "electron"
     ],
+    "jsx": "react-jsx",
     "isolatedModules": true,
     "esModuleInterop": true,
-    "jsx": "react-jsx",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
-    "target": "ESNext",
     "strict": true,
     "allowJs": true,
     "skipLibCheck": true,
@@ -22,17 +27,19 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "~/*": ["./app/*"]
+      "~/*": [
+        "./app/*"
+      ]
     },
-    // vite takes care of building everything, not tsc
     "noEmit": true
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "**/.server/**/*.ts",
-    "**/.server/**/*.tsx",
-    "**/.client/**/*.ts",
-    "**/.client/**/*.tsx"
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "**/*.test.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
   ]
 }

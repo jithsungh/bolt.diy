@@ -12,7 +12,10 @@ import { PlannerAgent } from './PlannerAgent';
 import { ExecutorAgent } from './ExecutorAgent';
 import { ReviewerAgent } from './ReviewerAgent';
 import { TaskQueue, type QueueStats, type QueuedTask } from './TaskQueue';
-import { ExecutionFeedbackLoop, type ExecutionResult as FeedbackResult } from './ExecutionFeedbackLoop';
+import { ExecutionFeedbackLoop, type IterativeExecutionResult } from './ExecutionFeedbackLoop';
+import type { ResourceLimits } from './ResourceLimiter';
+import type { TestRunnerConfig } from './TestRunner';
+import type { BuildValidatorConfig } from './BuildValidator';
 import { AgentEvaluationSystem, type AgentPerformance } from './AgentEvaluationSystem';
 import type {
   Task,
@@ -40,6 +43,11 @@ export interface OrchestratorConfig {
   maxExecutionTime: number; // milliseconds
   enableFeedbackLoop?: boolean; // Phase 2
   enableEvaluation?: boolean; // Phase 2
+  // Phase 3: Iterative execution options
+  iterativeMode?: boolean;
+  resourceLimits?: Partial<ResourceLimits>;
+  testRunnerConfig?: TestRunnerConfig;
+  buildValidatorConfig?: BuildValidatorConfig;
 }
 
 export interface ExecutionResult {
@@ -69,7 +77,7 @@ export interface TaskExecutionRecord {
   duration: number;
   agent: AgentRole;
   attempt: number;
-  feedbackResult?: FeedbackResult; // Phase 2
+  feedbackResult?: IterativeExecutionResult; // Phase 2+3
 }
 
 /**
@@ -103,6 +111,10 @@ export class AgentOrchestrator {
       maxExecutionTime: config.maxExecutionTime ?? 300000, // 5 minutes
       enableFeedbackLoop: config.enableFeedbackLoop ?? true,
       enableEvaluation: config.enableEvaluation ?? true,
+      iterativeMode: config.iterativeMode ?? true,
+      resourceLimits: config.resourceLimits ?? {},
+      testRunnerConfig: config.testRunnerConfig ?? {},
+      buildValidatorConfig: config.buildValidatorConfig ?? {},
     };
 
     // Initialize agents
@@ -110,7 +122,7 @@ export class AgentOrchestrator {
     this.executorAgent = new ExecutorAgent();
     this.reviewerAgent = new ReviewerAgent();
     
-    // Phase 2: Initialize advanced systems
+    // Phase 2+3: Initialize advanced systems
     this.taskQueue = new TaskQueue({
       maxConcurrent: this.config.maxConcurrentTasks,
       defaultMaxAttempts: this.config.enableAutoRetry ? 3 : 1,
@@ -120,6 +132,10 @@ export class AgentOrchestrator {
     this.feedbackLoop = new ExecutionFeedbackLoop({
       maxRetries: this.config.enableAutoRetry ? 3 : 1,
       timeout: this.config.maxExecutionTime,
+      iterativeMode: this.config.iterativeMode,
+      resourceLimits: this.config.resourceLimits,
+      testRunnerConfig: this.config.testRunnerConfig,
+      buildValidatorConfig: this.config.buildValidatorConfig,
     });
     
     this.evaluationSystem = new AgentEvaluationSystem();
@@ -444,7 +460,7 @@ export class AgentOrchestrator {
     };
 
     let result: TaskResult;
-    let feedbackResult: FeedbackResult | undefined;
+    let feedbackResult: IterativeExecutionResult | undefined;
 
     try {
       if (agent === 'executor') {
@@ -476,13 +492,17 @@ export class AgentOrchestrator {
             if (!feedbackResult.success) {
               result.success = false;
               result.validationErrors = result.validationErrors || [];
-              result.validationErrors.push(...feedbackResult.errors.map(err => ({
-                type: err.type as any,
-                severity: err.severity,
-                message: err.message,
-                file: err.file,
-                line: err.line,
-              })));
+              
+              // Map ParsedError to ValidationError
+              for (const err of feedbackResult.errors) {
+                result.validationErrors.push({
+                  type: err.type as any,
+                  severity: err.severity,
+                  message: err.message,
+                  filePath: err.file,
+                  line: err.line,
+                });
+              }
             }
           } catch (feedbackError) {
             logger.warn('Feedback loop error:', feedbackError);

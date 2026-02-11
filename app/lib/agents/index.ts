@@ -24,8 +24,12 @@ export {
   ExecutionFeedbackLoop,
   type ExecutionContext as FeedbackExecutionContext,
   type ExecutionResult as FeedbackExecutionResult,
+  type IterativeExecutionResult,
+  type PhaseResult,
+  type FixAttempt,
   type ParsedError,
   type FeedbackSummary,
+  type ExecutionFeedbackConfig,
 } from './ExecutionFeedbackLoop';
 export {
   AgentEvaluationSystem,
@@ -63,13 +67,46 @@ export {
   type ProcessResult,
 } from './AgentSystemIntegration';
 
+// Phase 3: Execution Feedback Loop Components
+export {
+  RollbackManager,
+  type Checkpoint,
+  type CheckpointFile,
+  type RollbackResult,
+  type RollbackManagerConfig,
+} from './RollbackManager';
+export {
+  ResourceLimiter,
+  ResourceLimitError,
+  type ResourceLimits,
+  type ResourceBudget,
+  type ResourceLimiterConfig,
+} from './ResourceLimiter';
+export {
+  TestRunner,
+  type TestCase,
+  type TestRunResult,
+  type CoverageSummary,
+  type TestRunnerConfig,
+} from './TestRunner';
+export {
+  BuildValidator,
+  type BuildArtifact,
+  type BundleSizeReport,
+  type BuildValidationResult,
+  type BuildIssue,
+  type BuildBaseline,
+  type BuildValidatorConfig,
+} from './BuildValidator';
+
 // Version
-export const AGENT_SYSTEM_VERSION = '2.0.0-phase2';
+export const AGENT_SYSTEM_VERSION = '3.0.0-phase3';
 
 // System description
 export const SYSTEM_DESCRIPTION = 
   'Multi-Agent Autonomous Coding System v' + AGENT_SYSTEM_VERSION +
   '\n\nPhase 1: Repo Intelligence Layer (AST parsing, semantic search, context building)' +
   '\nPhase 2: Task Queue, Execution Feedback Loop, Agent Evaluation System' +
+  '\nPhase 3: Iterative Execution, Rollback, Resource Limits, Smart Testing, Build Validation' +
   '\n\nIntegration Points: WebContainer, ActionRunner, LLM system, MCP service';
 
