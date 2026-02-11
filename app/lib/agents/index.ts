@@ -99,8 +99,46 @@ export {
   type BuildValidatorConfig,
 } from './BuildValidator';
 
+// Phase 4: Memory System
+export {
+  MemoryManager,
+  type MemoryConfig,
+  type AugmentedTask,
+  type MemoryStats,
+} from '../memory/MemoryManager';
+export {
+  MemoryRetrieval,
+  type RetrievalQuery,
+  type RelevantContext,
+  type ScoredItem,
+} from '../memory/MemoryRetrieval';
+export {
+  ShortTermMemory,
+  type Message,
+  type CompressedHistory,
+  type ConversationContext,
+  type ActiveTaskState,
+} from '../memory/ShortTermMemory';
+export {
+  LongTermMemory,
+  type ModuleSummary,
+  type DesignDecision,
+  type HistoricalFix,
+} from '../memory/LongTermMemory';
+export {
+  ChromaDBWrapper,
+  type ChromaDBConfig,
+  type ChromaDocument,
+  type SearchResult as ChromaSearchResult,
+} from '../memory/ChromaDBWrapper';
+export {
+  EmbeddingGenerator,
+  type EmbeddingConfig,
+  type EmbeddingResult,
+} from '../memory/EmbeddingGenerator';
+
 // Version
-export const AGENT_SYSTEM_VERSION = '3.0.0-phase3';
+export const AGENT_SYSTEM_VERSION = '4.0.0-phase4';
 
 // System description
 export const SYSTEM_DESCRIPTION = 
@@ -108,5 +146,6 @@ export const SYSTEM_DESCRIPTION =
   '\n\nPhase 1: Repo Intelligence Layer (AST parsing, semantic search, context building)' +
   '\nPhase 2: Task Queue, Execution Feedback Loop, Agent Evaluation System' +
   '\nPhase 3: Iterative Execution, Rollback, Resource Limits, Smart Testing, Build Validation' +
-  '\n\nIntegration Points: WebContainer, ActionRunner, LLM system, MCP service';
+  '\nPhase 4: Memory System (short-term conversation, long-term knowledge, semantic search)' +
+  '\n\nIntegration Points: WebContainer, ActionRunner, LLM system, MCP service, ChromaDB';
 

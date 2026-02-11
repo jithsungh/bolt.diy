@@ -17,6 +17,8 @@ import type { ResourceLimits } from './ResourceLimiter';
 import type { TestRunnerConfig } from './TestRunner';
 import type { BuildValidatorConfig } from './BuildValidator';
 import { AgentEvaluationSystem, type AgentPerformance } from './AgentEvaluationSystem';
+// Phase 4: Memory system
+import { MemoryManager, type MemoryConfig, type MemoryStats } from '../memory/MemoryManager';
 import type {
   Task,
   TaskResult,
@@ -48,6 +50,9 @@ export interface OrchestratorConfig {
   resourceLimits?: Partial<ResourceLimits>;
   testRunnerConfig?: TestRunnerConfig;
   buildValidatorConfig?: BuildValidatorConfig;
+  // Phase 4: Memory system options
+  enableMemory?: boolean;
+  memoryConfig?: Partial<MemoryConfig>;
 }
 
 export interface ExecutionResult {
@@ -60,6 +65,7 @@ export interface ExecutionResult {
     systemPerformance: any;
     agentPerformance: Map<AgentRole, AgentPerformance>;
   }; // Phase 2
+  memoryStats?: MemoryStats; // Phase 4
   errors: string[];
   warnings: string[];
   metrics: {
@@ -95,6 +101,9 @@ export class AgentOrchestrator {
   private feedbackLoop: ExecutionFeedbackLoop;
   private evaluationSystem: AgentEvaluationSystem;
   
+  // Phase 4: Memory system
+  private memoryManager?: MemoryManager;
+  
   private executedTasks: TaskExecutionRecord[] = [];
   private isExecuting = false;
 
@@ -115,6 +124,8 @@ export class AgentOrchestrator {
       resourceLimits: config.resourceLimits ?? {},
       testRunnerConfig: config.testRunnerConfig ?? {},
       buildValidatorConfig: config.buildValidatorConfig ?? {},
+      enableMemory: config.enableMemory ?? false,
+      memoryConfig: config.memoryConfig ?? {},
     };
 
     // Initialize agents
@@ -139,8 +150,32 @@ export class AgentOrchestrator {
     });
     
     this.evaluationSystem = new AgentEvaluationSystem();
+    
+    // Phase 4: Initialize memory system if enabled
+    if (this.config.enableMemory && this.config.memoryConfig?.modelProvider) {
+      this.memoryManager = new MemoryManager(this.config.memoryConfig as MemoryConfig);
+      logger.info('Memory system enabled');
+    }
 
     logger.info('Agent Orchestrator initialized', this.config);
+  }
+
+  /**
+   * Initialize the orchestrator (Phase 4: includes memory system)
+   */
+  async initialize(): Promise<void> {
+    logger.info('Initializing Agent Orchestrator');
+    
+    if (this.memoryManager) {
+      try {
+        await this.memoryManager.initialize();
+        logger.info('Memory system initialized successfully');
+      } catch (error) {
+        logger.error('Failed to initialize memory system', { error });
+        this.config.enableMemory = false;
+        this.memoryManager = undefined;
+      }
+    }
   }
 
   /**
