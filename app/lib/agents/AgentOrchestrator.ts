@@ -1,10 +1,19 @@
-// Agent Orchestrator
-// Coordinates multi-agent workflow and manages task execution
+/**
+ * Agent Orchestrator (Phase 1 + Phase 2)
+ * Coordinates multi-agent workflow with full Phase 2 capabilities:
+ * - Task Queue for parallel execution
+ * - Execution Feedback Loop for automated testing
+ * - Agent Evaluation System for performance tracking
+ * - WebContainer integration for safe execution
+ */
 
 import { createScopedLogger } from '~/utils/logger';
 import { PlannerAgent } from './PlannerAgent';
 import { ExecutorAgent } from './ExecutorAgent';
 import { ReviewerAgent } from './ReviewerAgent';
+import { TaskQueue, type QueueStats, type QueuedTask } from './TaskQueue';
+import { ExecutionFeedbackLoop, type ExecutionResult as FeedbackResult } from './ExecutionFeedbackLoop';
+import { AgentEvaluationSystem, type AgentPerformance } from './AgentEvaluationSystem';
 import type {
   Task,
   TaskResult,
@@ -14,9 +23,14 @@ import type {
   ExecutorInput,
   ReviewerOutput,
   AgentRole,
+  TaskPriority,
 } from './types';
 
 const logger = createScopedLogger('AgentOrchestrator');
+
+// WebContainer types (imported dynamically to avoid compile errors)
+type WebContainer = any;
+type BoltShell = any;
 
 export interface OrchestratorConfig {
   maxConcurrentTasks: number;
@@ -24,6 +38,8 @@ export interface OrchestratorConfig {
   requireReview: boolean;
   safetyMode: 'strict' | 'moderate' | 'permissive';
   maxExecutionTime: number; // milliseconds
+  enableFeedbackLoop?: boolean; // Phase 2
+  enableEvaluation?: boolean; // Phase 2
 }
 
 export interface ExecutionResult {
@@ -31,6 +47,11 @@ export interface ExecutionResult {
   plan?: PlannerOutput;
   executedTasks: TaskExecutionRecord[];
   overallReview?: ReviewerOutput;
+  queueStats?: QueueStats; // Phase 2
+  evaluation?: {
+    systemPerformance: any;
+    agentPerformance: Map<AgentRole, AgentPerformance>;
+  }; // Phase 2
   errors: string[];
   warnings: string[];
   metrics: {
@@ -43,25 +64,35 @@ export interface ExecutionResult {
 }
 
 export interface TaskExecutionRecord {
-  task: Task;
+  task: Task | QueuedTask;
   result: TaskResult;
   duration: number;
   agent: AgentRole;
   attempt: number;
+  feedbackResult?: FeedbackResult; // Phase 2
 }
 
 /**
  * Main orchestrator that coordinates all agents
+ * Phase 1 + Phase 2: Task queue, feedback loop, and evaluation system
  */
 export class AgentOrchestrator {
   private plannerAgent: PlannerAgent;
   private executorAgent: ExecutorAgent;
   private reviewerAgent: ReviewerAgent;
-  private config: OrchestratorConfig;
+  private config: Required<OrchestratorConfig>;
 
-  private taskQueue: Task[] = [];
+  // Phase 2: Advanced components
+  private taskQueue: TaskQueue;
+  private feedbackLoop: ExecutionFeedbackLoop;
+  private evaluationSystem: AgentEvaluationSystem;
+  
   private executedTasks: TaskExecutionRecord[] = [];
   private isExecuting = false;
+
+  // WebContainer integration (Phase 2)
+  private webcontainer?: WebContainer;
+  private shell?: BoltShell;
 
   constructor(config: Partial<OrchestratorConfig> = {}) {
     this.config = {
@@ -70,14 +101,39 @@ export class AgentOrchestrator {
       requireReview: config.requireReview ?? true,
       safetyMode: config.safetyMode ?? 'strict',
       maxExecutionTime: config.maxExecutionTime ?? 300000, // 5 minutes
+      enableFeedbackLoop: config.enableFeedbackLoop ?? true,
+      enableEvaluation: config.enableEvaluation ?? true,
     };
 
     // Initialize agents
     this.plannerAgent = new PlannerAgent();
     this.executorAgent = new ExecutorAgent();
     this.reviewerAgent = new ReviewerAgent();
+    
+    // Phase 2: Initialize advanced systems
+    this.taskQueue = new TaskQueue({
+      maxConcurrent: this.config.maxConcurrentTasks,
+      defaultMaxAttempts: this.config.enableAutoRetry ? 3 : 1,
+      taskTimeout: this.config.maxExecutionTime,
+    });
+    
+    this.feedbackLoop = new ExecutionFeedbackLoop({
+      maxRetries: this.config.enableAutoRetry ? 3 : 1,
+      timeout: this.config.maxExecutionTime,
+    });
+    
+    this.evaluationSystem = new AgentEvaluationSystem();
 
     logger.info('Agent Orchestrator initialized', this.config);
+  }
+
+  /**
+   * Set WebContainer for code execution (Phase 2)
+   */
+  setWebContainer(webcontainer: WebContainer, shell?: BoltShell): void {
+    this.webcontainer = webcontainer;
+    this.shell = shell;
+    logger.info('WebContainer configured for execution feedback');
   }
 
   /**
@@ -130,14 +186,19 @@ export class AgentOrchestrator {
         result.warnings.push(...plan.warnings);
       }
 
-      // Step 2: Execution Phase
+      // Step 2: Execution Phase (with Task Queue)
       logger.info('Phase 2: Execution');
-      this.taskQueue = [...plan.tasks];
+      
+      // Enqueue all tasks with dependency detection
+      this.taskQueue.enqueueBatch(plan.tasks, { detectDependencies: true });
       
       const executionResults = await this.executionPhase(context);
       result.executedTasks = executionResults;
       result.metrics.completedTasks = executionResults.filter(r => r.result.success).length;
       result.metrics.failedTasks = executionResults.filter(r => !r.result.success).length;
+
+      // Add Phase 2 queue stats
+      result.queueStats = this.taskQueue.getStats();
 
       // Step 3: Review Phase
       if (this.config.requireReview) {
@@ -167,6 +228,24 @@ export class AgentOrchestrator {
       result.metrics.agentMetrics.planner = this.plannerAgent.getMetrics();
       result.metrics.agentMetrics.executor = this.executorAgent.getMetrics();
       result.metrics.agentMetrics.reviewer = this.reviewerAgent.getMetrics();
+
+      // Phase 2: Add evaluation results
+      if (this.config.enableEvaluation) {
+        const systemPerf = this.evaluationSystem.getSystemPerformance();
+        const agentPerformance = new Map<AgentRole, AgentPerformance>();
+        
+        (['planner', 'executor', 'reviewer'] as AgentRole[]).forEach(role => {
+          const perf = this.evaluationSystem.getAgentPerformance(role);
+          if (perf) {
+            agentPerformance.set(role, perf);
+          }
+        });
+
+        result.evaluation = {
+          systemPerformance: systemPerf,
+          agentPerformance,
+        };
+      }
 
     } catch (error) {
       logger.error('Orchestration failed:', error);
@@ -214,56 +293,87 @@ export class AgentOrchestrator {
   }
 
   /**
-   * Execution Phase: Execute tasks according to plan
+   * Execution Phase: Execute tasks with TaskQueue (Phase 2)
    */
   private async executionPhase(context: ExecutionContext): Promise<TaskExecutionRecord[]> {
     const records: TaskExecutionRecord[] = [];
     const safetyConstraints = this.getSafetyConstraints();
 
-    // Process tasks respecting dependencies
-    while (this.taskQueue.length > 0) {
-      const readyTasks = this.getReadyTasks(records);
+    // Process tasks using TaskQueue
+    let activePromises: Map<string, Promise<TaskExecutionRecord>> = new Map();
+
+    while (true) {
+      const stats = this.taskQueue.getStats();
       
-      if (readyTasks.length === 0) {
-        logger.warn('No ready tasks, but queue not empty. Possible circular dependency');
+      // Check if all tasks are done
+      if (stats.pending === 0 && stats.running === 0 && stats.blocked === 0) {
         break;
       }
 
-      // Execute ready tasks (up to concurrency limit)
-      const tasksToExecute = readyTasks.slice(0, this.config.maxConcurrentTasks);
+      // Get next ready task
+      const queuedTask = this.taskQueue.getNext();
       
-      logger.info(`Executing ${tasksToExecute.length} tasks`);
+      if (queuedTask) {
+        // Start executing the task
+        const promise = this.executeTaskWithQueue(queuedTask, context, safetyConstraints)
+          .then(record => {
+            // Mark as completed or failed in queue
+            if (record.result.success) {
+              this.taskQueue.markCompleted(queuedTask.id);
+            } else {
+              this.taskQueue.markFailed(queuedTask.id, record.result.validationErrors?.[0]?.message);
+            }
+            
+            // Add to evaluation system (Phase 2)
+            if (this.config.enableEvaluation) {
+              // Convert QueuedTask to Task for evaluation
+              const taskForEval: Task = {
+                ...queuedTask,
+                priority: this.convertPriorityToString(queuedTask.priority),
+              };
+              
+              this.evaluationSystem.evaluateTask(
+                taskForEval,
+                record.result,
+                {
+                  completionTime: record.duration,
+                  attempts: queuedTask.attempts,
+                }
+              );
+            }
+            
+            return record;
+          });
 
-      const promises = tasksToExecute.map(task => 
-        this.executeTask(task, context, safetyConstraints)
-      );
+        activePromises.set(queuedTask.id, promise);
+      }
 
-      const results = await Promise.allSettled(promises);
-
-      results.forEach((result, index) => {
-        const task = tasksToExecute[index];
-        this.taskQueue = this.taskQueue.filter(t => t.id !== task.id);
-
-        if (result.status === 'fulfilled') {
-          records.push(result.value);
-        } else {
-          // Task failed completely
-          records.push({
-            task,
-            result: {
-              success: false,
-              validationErrors: [{
-                type: 'logic',
-                severity: 'error',
-                message: result.reason?.message || 'Task execution failed',
-              }],
-            },
-            duration: 0,
-            agent: this.getAgentForTask(task),
-            attempt: 1,
+      // Wait for at least one task to complete before checking for more
+      if (activePromises.size > 0) {
+        const completedRecord = await Promise.race(activePromises.values());
+        records.push(completedRecord);
+        activePromises.delete(completedRecord.task.id);
+      } else {
+        // No tasks ready and none running - check if blocked
+        const blockedTasks = this.taskQueue.getBlockedTasks();
+        if (blockedTasks.length > 0) {
+          logger.warn(`${blockedTasks.length} tasks blocked by dependencies`, {
+            blocked: blockedTasks.map(b => ({
+              task: b.task.id,
+              waitingFor: b.waitingFor,
+            })),
           });
         }
-      });
+        
+        // Small delay to prevent tight loop
+        await this.delay(100);
+      }
+    }
+
+    // Wait for any remaining tasks
+    if (activePromises.size > 0) {
+      const remaining = await Promise.all(activePromises.values());
+      records.push(...remaining);
     }
 
     return records;
@@ -315,20 +425,26 @@ export class AgentOrchestrator {
   }
 
   /**
-   * Execute a single task
+   * Execute a single task with Phase 2 features (feedback loop)
    */
-  private async executeTask(
-    task: Task,
+  private async executeTaskWithQueue(
+    queuedTask: QueuedTask,
     context: ExecutionContext,
     safetyConstraints: SafetyConstraints
   ): Promise<TaskExecutionRecord> {
     const startTime = Date.now();
-    const agent = this.getAgentForTask(task);
+    const agent = this.getAgentForTask(queuedTask);
 
-    logger.info(`Executing task ${task.id} with ${agent} agent`);
+    logger.info(`Executing task ${queuedTask.id} with ${agent} agent (attempt ${queuedTask.attempts})`);
+
+    // Convert QueuedTask to Task for agent compatibility
+    const task: Task = {
+      ...queuedTask,
+      priority: this.convertPriorityToString(queuedTask.priority),
+    };
 
     let result: TaskResult;
-    let attempt = 1;
+    let feedbackResult: FeedbackResult | undefined;
 
     try {
       if (agent === 'executor') {
@@ -338,23 +454,49 @@ export class AgentOrchestrator {
           safetyConstraints,
         };
         result = await this.executorAgent.execute(task, executorInput);
+
+        // Phase 2: Execute with feedback loop if enabled
+        if (this.config.enableFeedbackLoop && result.changes && this.webcontainer && this.shell) {
+          try {
+            feedbackResult = await this.feedbackLoop.executeWithFeedback(
+              result.changes,
+              {
+                webcontainer: this.webcontainer,
+                shell: this.shell,
+                workDir: '/home/project',
+              },
+              {
+                buildCommand: 'npm run build',
+                testCommand: 'npm test',
+                lintCommand: 'npm run lint',
+              }
+            );
+
+            // If feedback indicates errors, update result
+            if (!feedbackResult.success) {
+              result.success = false;
+              result.validationErrors = result.validationErrors || [];
+              result.validationErrors.push(...feedbackResult.errors.map(err => ({
+                type: err.type as any,
+                severity: err.severity,
+                message: err.message,
+                file: err.file,
+                line: err.line,
+              })));
+            }
+          } catch (feedbackError) {
+            logger.warn('Feedback loop error:', feedbackError);
+            // Don't fail the task if feedback loop fails
+          }
+        }
       } else if (agent === 'planner') {
         result = await this.plannerAgent.execute(task, context);
       } else {
         result = await this.reviewerAgent.execute(task, context);
       }
 
-      // Retry logic
-      if (!result.success && this.config.enableAutoRetry && task.retryCount && task.retryCount < 3) {
-        logger.warn(`Task ${task.id} failed, retrying...`);
-        task.retryCount = (task.retryCount || 0) + 1;
-        attempt = task.retryCount;
-        await this.delay(1000 * attempt);
-        return this.executeTask(task, context, safetyConstraints);
-      }
-
     } catch (error) {
-      logger.error(`Task ${task.id} threw error:`, error);
+      logger.error(`Task ${queuedTask.id} threw error:`, error);
       result = {
         success: false,
         validationErrors: [{
@@ -368,33 +510,29 @@ export class AgentOrchestrator {
     const duration = Date.now() - startTime;
 
     return {
-      task,
+      task: queuedTask,
       result,
       duration,
       agent,
-      attempt,
+      attempt: queuedTask.attempts,
+      feedbackResult,
     };
   }
 
   /**
-   * Get tasks that are ready to execute (dependencies met)
+   * Convert numeric priority to TaskPriority string
    */
-  private getReadyTasks(completedRecords: TaskExecutionRecord[]): Task[] {
-    const completedTaskIds = new Set(completedRecords.map(r => r.task.id));
-
-    return this.taskQueue.filter(task => {
-      if (!task.dependencies || task.dependencies.length === 0) {
-        return true;
-      }
-
-      return task.dependencies.every(depId => completedTaskIds.has(depId));
-    });
+  private convertPriorityToString(priority: number): TaskPriority {
+    if (priority >= 90) return 'critical';
+    if (priority >= 70) return 'high';
+    if (priority >= 40) return 'medium';
+    return 'low';
   }
 
   /**
    * Determine which agent should handle a task
    */
-  private getAgentForTask(task: Task): AgentRole {
+  private getAgentForTask(task: Task | QueuedTask): AgentRole {
     switch (task.type) {
       case 'analysis':
         return 'planner';
@@ -458,12 +596,14 @@ export class AgentOrchestrator {
     isExecuting: boolean;
     queuedTasks: number;
     executedTasks: number;
+    queueStats: QueueStats;
     agentMetrics: Record<AgentRole, any>;
   } {
     return {
       isExecuting: this.isExecuting,
-      queuedTasks: this.taskQueue.length,
+      queuedTasks: this.taskQueue.getStats().pending,
       executedTasks: this.executedTasks.length,
+      queueStats: this.taskQueue.getStats(),
       agentMetrics: {
         planner: this.plannerAgent.getMetrics(),
         executor: this.executorAgent.getMetrics(),
@@ -477,7 +617,7 @@ export class AgentOrchestrator {
    * Reset orchestrator state
    */
   reset(): void {
-    this.taskQueue = [];
+    this.taskQueue.clear();
     this.executedTasks = [];
     this.isExecuting = false;
     

@@ -13,6 +13,7 @@ export interface Task {
   description: string;
   priority: TaskPriority;
   status: TaskStatus;
+  assignedTo?: AgentRole;
   targetFiles?: string[];
   dependencies?: string[];
   metadata?: Record<string, any>;
