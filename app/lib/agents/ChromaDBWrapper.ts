@@ -98,6 +98,14 @@ export class ChromaDBWrapper {
       return;
     }
 
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined') {
+      logger.warn('ChromaDB requires browser environment (IndexedDB), skipping initialization on server');
+      // Set as initialized but with no client, methods will need to handle this
+      this.initialized = true;
+      return;
+    }
+
     try {
       // Dynamic import for browser compatibility
       const { ChromaClient } = await import('chromadb');
@@ -116,7 +124,9 @@ export class ChromaDBWrapper {
       logger.info('ChromaDB initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize ChromaDB:', error);
-      throw new Error(`ChromaDB initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+      // Don't throw - allow system to continue without ChromaDB
+      logger.warn('Continuing without ChromaDB support');
+      this.initialized = true;
     }
   }
 
@@ -139,6 +149,11 @@ export class ChromaDBWrapper {
    */
   async getOrCreateCollection(name: string, metadata?: Record<string, any>): Promise<Collection> {
     this.ensureInitialized();
+
+    if (!this.client) {
+      logger.warn('ChromaDB client not available, returning null collection');
+      return null as any;
+    }
 
     if (this.collections.has(name)) {
       return this.collections.get(name)!;
@@ -414,8 +429,12 @@ export class ChromaDBWrapper {
   // -------------------------------------------------------------------------
 
   private ensureInitialized(): void {
-    if (!this.initialized || !this.client) {
+    if (!this.initialized) {
       throw new Error('ChromaDBWrapper not initialized. Call initialize() first.');
+    }
+    // Allow continuing even if client is null (server-side mode)
+    if (!this.client) {
+      logger.debug('ChromaDB client not available (server-side), operation will be skipped');
     }
   }
 

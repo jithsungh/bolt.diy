@@ -78,7 +78,8 @@ export default class GithubProvider extends BaseProvider {
     });
 
     if (!apiKey) {
-      console.log('GitHub: No API key found. Make sure GITHUB_API_KEY is set in your .env.local file');
+      console.log('GitHub: No API key found. Using static model list.');
+      console.log('To enable dynamic models, set GITHUB_API_KEY in your .env.local file or Settings.');
 
       // Return static models if no API key is available
       return this.staticModels;

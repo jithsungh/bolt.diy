@@ -16,7 +16,8 @@ import type {
   StepStartUIPart,
 } from '@ai-sdk/ui-utils';
 import { ToolInvocations } from './ToolInvocations';
-import type { ToolCallAnnotation } from '~/types/context';
+import type { ToolCallAnnotation, AgentStatusAnnotation, AgentStepAnnotation } from '~/types/context';
+import AgentStatusDisplay from './AgentStatusDisplay';
 
 interface AssistantMessageProps {
   content: string;
@@ -102,8 +103,22 @@ export const AssistantMessage = memo(
       (annotation) => annotation.type === 'toolCall',
     ) as ToolCallAnnotation[];
 
+    // ✅ Extract agent-related annotations
+    const agentStatuses = filteredAnnotations.filter(
+      (annotation) => annotation.type === 'agentStatus',
+    ) as AgentStatusAnnotation[];
+    
+    const agentSteps = filteredAnnotations.filter(
+      (annotation) => annotation.type === 'agentStep',
+    ) as AgentStepAnnotation[];
+
     return (
       <div className="overflow-hidden w-full">
+        {/* ✅ Display agent status if agent mode was used */}
+        {(agentStatuses.length > 0 || agentSteps.length > 0) && (
+          <AgentStatusDisplay agentStatuses={agentStatuses} agentSteps={agentSteps} />
+        )}
+        
         <>
           <div className=" flex gap-2 items-center text-sm text-bolt-elements-textSecondary mb-2">
             {(codeContext || chatSummary) && (

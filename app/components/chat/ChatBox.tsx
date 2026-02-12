@@ -20,6 +20,7 @@ import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import { McpTools } from './MCPTools';
 import { WebSearch } from './WebSearch.client';
+import { AgentModeIndicator } from './AgentModeIndicator';
 
 interface ChatBoxProps {
   isModelSettingsCollapsed: boolean;
@@ -108,6 +109,11 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
         <ClientOnly>
           {() => (
             <div className={props.isModelSettingsCollapsed ? 'hidden' : ''}>
+              {/* Agent Mode Indicator */}
+              <div className="mb-2 px-2">
+                <AgentModeIndicator />
+              </div>
+              
               <ModelSelector
                 key={props.provider?.name + ':' + props.modelList.length}
                 model={props.model}

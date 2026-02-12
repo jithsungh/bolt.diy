@@ -7,13 +7,14 @@ import SwitchableStream from '~/lib/.server/llm/switchable-stream';
 import type { IProviderSetting } from '~/types/model';
 import { createScopedLogger } from '~/utils/logger';
 import { getFilePaths, selectContext } from '~/lib/.server/llm/select-context';
-import type { ContextAnnotation, ProgressAnnotation } from '~/types/context';
+import type { ContextAnnotation, ProgressAnnotation, AgentStatusAnnotation, AgentStepAnnotation } from '~/types/context';
 import { WORK_DIR } from '~/utils/constants';
 import { createSummary } from '~/lib/.server/llm/create-summary';
 import { extractPropertiesFromMessage } from '~/lib/.server/llm/utils';
 import type { DesignScheme } from '~/types/design-scheme';
 import { MCPService } from '~/lib/services/mcpService';
 import { StreamRecoveryManager } from '~/lib/.server/llm/stream-recovery';
+import { isAgentModeEnabled, isMemoryEnabled, handleAgentChat } from '~/lib/agents/AgentChatHandler';
 
 export async function action(args: ActionFunctionArgs) {
   return chatAction(args);
@@ -68,10 +69,17 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     }>();
 
   const cookieHeader = request.headers.get('Cookie');
-  const apiKeys = JSON.parse(parseCookies(cookieHeader || '').apiKeys || '{}');
+  const cookies = parseCookies(cookieHeader || '');
+  const apiKeys = JSON.parse(cookies.apiKeys || '{}');
   const providerSettings: Record<string, IProviderSetting> = JSON.parse(
-    parseCookies(cookieHeader || '').providers || '{}',
+    cookies.providers || '{}',
   );
+
+  // ✅ Check if agent mode is enabled
+  const agentModeEnabled = isAgentModeEnabled(cookies);
+  const memoryEnabled = isMemoryEnabled(cookies);
+
+  logger.info(`Agent mode: ${agentModeEnabled}, Memory: ${memoryEnabled}`);
 
   const stream = new SwitchableStream();
 
@@ -104,6 +112,98 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         if (processedMessages.length > 3) {
           messageSliceId = processedMessages.length - 3;
         }
+
+        // ✅ AGENT MODE: Route through multi-agent system if enabled
+        if (agentModeEnabled) {
+          logger.info('🤖 Agent mode activated - routing through multi-agent system');
+          
+          dataStream.writeData({
+            type: 'progress',
+            label: 'agent-mode',
+            status: 'in-progress',
+            order: progressCounter++,
+            message: '🤖 Agent Mode: Activating multi-agent system',
+          } satisfies ProgressAnnotation);
+
+          try {
+            // Get model provider from last message
+            const lastUserMessage = processedMessages.filter((x) => x.role === 'user').slice(-1)[0];
+            const { provider = 'openai' } = extractPropertiesFromMessage(lastUserMessage);
+
+            const agentResult = await handleAgentChat({
+              messages: processedMessages,
+              files: filteredFiles || files,
+              apiKeys,
+              serverEnv: context.cloudflare?.env,
+              enableMemory: memoryEnabled,
+              modelProvider: provider,
+              onProgress: (annotation) => {
+                dataStream.writeData(annotation);
+              },
+              onAgentStatus: (agent, status, message) => {
+                dataStream.writeMessageAnnotation({
+                  type: 'agentStatus',
+                  agent,
+                  status,
+                  message,
+                  timestamp: Date.now(),
+                } as AgentStatusAnnotation);
+              },
+            });
+
+            // Write agent steps as annotations
+            agentResult.agentSteps.forEach((step, idx) => {
+              dataStream.writeMessageAnnotation({
+                type: 'agentStep',
+                agent: step.agent,
+                action: step.action,
+                result: step.result,
+                order: idx,
+              } as AgentStepAnnotation);
+            });
+
+            // Write the final response
+            dataStream.writeData({
+              type: 'progress',
+              label: 'agent-mode',
+              status: 'complete',
+              order: progressCounter++,
+              message: '✅ Agent processing complete',
+            } satisfies ProgressAnnotation);
+
+            // Stream the agent's response as text
+            for (const char of agentResult.response) {
+              await dataStream.writeData(char);
+              await new Promise(resolve => setTimeout(resolve, 5)); // Simulate streaming
+            }
+
+            dataStream.writeMessageAnnotation({
+              type: 'usage',
+              value: {
+                completionTokens: 0,
+                promptTokens: 0,
+                totalTokens: 0,
+              },
+            });
+
+            streamRecovery.stop();
+            return;
+          } catch (agentError: any) {
+            logger.error('Agent mode failed, falling back to standard mode:', agentError);
+            
+            dataStream.writeData({
+              type: 'progress',
+              label: 'agent-mode',
+              status: 'complete',
+              order: progressCounter++,
+              message: `⚠️ Agent mode error: ${agentError.message}. Falling back to standard mode.`,
+            } satisfies ProgressAnnotation);
+            
+            // Continue with standard mode below
+          }
+        }
+
+        // STANDARD MODE: Continue with existing logic
 
         if (filePaths.length > 0 && contextOptimization) {
           logger.debug('Generating Chat Summary');

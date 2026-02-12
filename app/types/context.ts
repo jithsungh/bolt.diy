@@ -24,3 +24,19 @@ export type ToolCallAnnotation = {
   toolName: string;
   toolDescription: string;
 };
+
+export type AgentStatusAnnotation = {
+  type: 'agentStatus';
+  agent: 'Planner' | 'Executor' | 'Reviewer' | 'Complete';
+  status: 'active' | 'complete' | 'error' | 'success';
+  message: string;
+  timestamp: number;
+};
+
+export type AgentStepAnnotation = {
+  type: 'agentStep';
+  agent: string;
+  action: string;
+  result: string;
+  order: number;
+};

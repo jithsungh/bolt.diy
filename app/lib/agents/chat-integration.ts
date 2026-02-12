@@ -71,9 +71,10 @@ export async function augmentPromptWithMemory(
     } else {
       // Insert new system message at the start
       augmentedMessages.unshift({
+        id: `memory_${Date.now()}`,
         role: 'system',
         content: memoryContext,
-      });
+      } as Message);
     }
 
     logger.info(`Augmented prompt with ${relevantMemories.length} memory items`);
