@@ -146,8 +146,28 @@ export {
   type EmbeddingResult,
 } from '../memory/EmbeddingGenerator';
 
+// Phase 5: AST-Aware Patch Engine & Safety Guardrails
+export {
+  ASTAwarePatchEngine,
+  type PatchOperation,
+  type Patch,
+  type PatchValidationResult,
+  type ASTNode,
+  type PatchEngineConfig,
+} from './ASTAwarePatchEngine';
+
+// Phase 6: Self-Improvement Engine
+export {
+  SelfImprovementEngine,
+  type FailurePattern,
+  type PromptImprovement,
+  type ImprovementReport,
+  type RegressionTest,
+  type SelfImprovementConfig,
+} from './SelfImprovementEngine';
+
 // Version
-export const AGENT_SYSTEM_VERSION = '4.0.0-phase4';
+export const AGENT_SYSTEM_VERSION = '6.0.0-phase6';
 
 // System description
 export const SYSTEM_DESCRIPTION = 
@@ -156,5 +176,7 @@ export const SYSTEM_DESCRIPTION =
   '\nPhase 2: Task Queue, Execution Feedback Loop, Agent Evaluation System' +
   '\nPhase 3: Iterative Execution, Rollback, Resource Limits, Smart Testing, Build Validation' +
   '\nPhase 4: Memory System (short-term conversation, long-term knowledge, semantic search)' +
+  '\nPhase 5: AST-Aware Patch Engine & Safety Guardrails (minimal diffs, syntax preservation)' +
+  '\nPhase 6: Self-Improvement Engine (pattern detection, prompt tuning, regression tests)' +
   '\n\nIntegration Points: WebContainer, ActionRunner, LLM system, MCP service, ChromaDB';
 
